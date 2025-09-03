@@ -8,3 +8,14 @@
 - Подпишите CLA/Author agreement при необходимости.
 
 Шаблон PR: краткое описание, что сделано, как проверить, ссылки на связанные issues.
+
+Рабочий процесс документации (aggregated)
+
+- Генерация листовых модулей: `mdoc dump-leaves <path>`
+- Агрегация в родительской папке: `mdoc aggregate <path>`
+  - Собирает `README.generated.md` и `README.md` из дочерних директорий
+  - Записывает «сырой материал» в `module_aggregated.md`
+  - При отсутствии — создаёт шаблон `README.aggregated.md`
+- Сводный README: формируйте содержимое `README.aggregated.md` (вручную или с помощью LLM) на основе `module_aggregated.md`.
+
+См. подробности и примеры в `README.md` (раздел команды `aggregate`).
