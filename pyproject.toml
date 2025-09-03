@@ -1,0 +1,14 @@
+[project]
+name = "mdoc"
+version = "0.1.0"
+description = "A CLI tool to generate and aggregate documentation for modular projects."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["pathspec>=0.12"]
+
+[project.scripts]
+mdoc = "mdoc.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
