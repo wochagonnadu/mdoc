@@ -8,7 +8,22 @@ import importlib.util
 from pathlib import Path
 
 # For gitignore parsing
-import pathspec
+try:
+    import pathspec
+    _HAVE_PATHSPEC = True
+except Exception:
+    pathspec = None
+    _HAVE_PATHSPEC = False
+    # Minimal fallback stub: matches nothing (i.e., behave as if no gitignore)
+    class _NoPathSpec:
+        @staticmethod
+        def from_lines(patterns, lines):
+            return _NoPathSpec()
+
+        def match_file(self, path):
+            return False
+
+    pathspec = _NoPathSpec
 
 IGNORE_DIRS = {'__pycache__', '.git', '.idea', 'node_modules'}
 CODE_EXTS = {'.py', '.md', '.json', '.yml', '.yaml', '.toml', '.ini'}
@@ -332,26 +347,79 @@ def dump_module(path, max_bytes, dry_run=False, verbose=False, gitignore_spec=No
             fout.write(readme_content)
 
 def aggregate_readmes(parent_path, dry_run=False, verbose=False):
-    """Aggregate all README.generated.md in subdirs into module_aggregated.md."""
+    """Aggregate README files from subdirectories into module_aggregated.md.
+
+    Behavior:
+    - Scans immediate subdirectories of `parent_path` (excluding IGNORE_DIRS).
+    - Includes content from `README.generated.md` if present.
+    - Also includes content from handwritten `README.md` if present.
+    - Writes combined raw material to `module_aggregated.md`.
+    - If no inputs found, writes a short explanatory stub instead of an empty file.
+    - Additionally, creates `README.aggregated.md` scaffold if it doesn't exist
+      (left for LLM/human to curate using module_aggregated.md as source).
+    """
     parent = Path(parent_path)
     aggregated_lines = []
     for child in sorted(parent.iterdir(), key=lambda p: p.name.lower()):
         if not child.is_dir() or child.name in IGNORE_DIRS:
             continue
-        readme = child / "README.generated.md"
-        if readme.exists():
+        readme_generated = child / "README.generated.md"
+        readme_manual = child / "README.md"
+
+        block_added = False
+        if readme_generated.exists():
             aggregated_lines.append(f"# {child.name}\n")
-            with open(readme, "r", encoding="utf-8") as fin:
+            aggregated_lines.append(f"> Source: {readme_generated.relative_to(parent)}\n\n")
+            with open(readme_generated, "r", encoding="utf-8") as fin:
                 aggregated_lines.append(fin.read())
             aggregated_lines.append("\n")
+            block_added = True
             if verbose:
-                print(f"[INFO] Aggregated {readme}")
+                print(f"[INFO] Aggregated {readme_generated}")
+
+        if readme_manual.exists():
+            # Include manual README as an additional block
+            if not block_added:
+                aggregated_lines.append(f"# {child.name}\n")
+            aggregated_lines.append(f"> Source: {readme_manual.relative_to(parent)}\n\n")
+            try:
+                with open(readme_manual, "r", encoding="utf-8") as fin:
+                    aggregated_lines.append(fin.read())
+            except Exception as e:
+                aggregated_lines.append(f"[Error reading {readme_manual.name}: {e}]\n")
+            aggregated_lines.append("\n")
+            if verbose:
+                print(f"[INFO] Aggregated {readme_manual}")
+
+    # Write module_aggregated.md
     agg_path = parent / "module_aggregated.md"
     if verbose:
         print(f"[INFO] Writing {agg_path}")
     if not dry_run:
         with open(agg_path, "w", encoding="utf-8") as fout:
-            fout.write('\n'.join(aggregated_lines))
+            if aggregated_lines:
+                fout.write('\n'.join(aggregated_lines))
+            else:
+                fout.write(
+                    "# Aggregated Module Docs\n\n"
+                    "No child README files found. Run `mdoc dump-leaves` in the project first,\n"
+                    "or add README.md files to child modules.\n"
+                )
+
+    # Create README.aggregated.md scaffold if missing
+    readme_agg_path = parent / "README.aggregated.md"
+    if not dry_run and not readme_agg_path.exists():
+        if verbose:
+            print(f"[INFO] Creating scaffold {readme_agg_path}")
+        scaffold = (
+            "# README.aggregated.md\n\n"
+            "Этот файл предназначен для сводного человеческого/LLM-описания модуля на основе\n"
+            "сырых материалов из `module_aggregated.md`.\n\n"
+            "Подсказка: откройте `module_aggregated.md` и создайте здесь краткую, структурированную\n"
+            "версию (цель, содержание, ключевые интерфейсы, зависимости, запуск).\n"
+        )
+        with open(readme_agg_path, "w", encoding="utf-8") as fout:
+            fout.write(scaffold)
 
 def do_dump_leaves(root, max_bytes, dry_run, verbose, gitignore_spec):
     """Logic for the dump-leaves command."""
